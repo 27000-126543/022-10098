@@ -11,7 +11,6 @@ import {
   ChevronRight,
   X,
   User,
-  Phone,
   Stethoscope,
   CalendarDays,
   FileCheck,
@@ -20,6 +19,10 @@ import {
   Image as ImageIcon,
   Search,
   RotateCcw,
+  FileText,
+  Copy,
+  AlertCircle,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import NavBar from '@/components/NavBar';
@@ -27,7 +30,8 @@ import PageTransition from '@/components/PageTransition';
 import StatusBadge from '@/components/StatusBadge';
 import { records as mockRecords } from '@/data/records';
 import { useSignFlowStore } from '@/store/signFlow';
-import type { SignStatus, SignRecord as StoreSignRecord } from '@/types';
+import type { SignStatus, SignRecord as StoreSignRecord, SignerType } from '@/types';
+import { SIGNER_TYPE_LABELS, STEP_ROUTE_MAP } from '@/types';
 
 type UnifiedRecord = {
   id: string;
@@ -39,16 +43,28 @@ type UnifiedRecord = {
   doctor: string;
   status: SignStatus;
   createTime: string;
-  signerType?: string;
+  signerType?: SignerType;
   signerName?: string;
+  guardianRelation?: string;
   explainedSections?: string[];
+  explainedSectionTitles?: string[];
   confirmedKeyRisks?: string[];
+  confirmedKeyRiskTitles?: string[];
   customerSignature?: string;
   keySentenceSignature?: string;
   preCheckStatus?: { photo: boolean; allergy: boolean; medication: boolean };
   templateName?: string;
+  consentTemplateName?: string;
   exceptionType?: string;
   exceptionRemark?: string;
+  customerPhone?: string;
+  customerIdCardLast4?: string;
+  currentStep?: number;
+  signTime?: string;
+  exceptionId?: string;
+  exceptionResolved?: boolean;
+  exceptionDescription?: string;
+  exceptionMeasures?: string;
 };
 
 const DOCTOR_OPTIONS = ['全部', '张医生', '李医生', '王医生'] as const;
@@ -62,12 +78,12 @@ const STATUS_OPTIONS = [
   { value: 'exception', label: '异常' },
 ] as const;
 
-const NEXT_ACTION_MAP: Record<SignStatus, { label: string; route: string; dotColor: string }> = {
-  pending: { label: '去核验', route: '/', dotColor: 'bg-gray-500' },
-  explaining: { label: '去讲解', route: '/risk-explain', dotColor: 'bg-blue-500' },
-  ready_to_sign: { label: '去签署', route: '/sign', dotColor: 'bg-purple-500' },
-  completed: { label: '已归档', route: '', dotColor: 'bg-green-500' },
-  exception: { label: '去处理异常', route: '/exception', dotColor: 'bg-red-500' },
+const NEXT_ACTION_MAP: Record<SignStatus, { label: string; dotColor: string }> = {
+  pending: { label: '去核验', dotColor: 'bg-gray-500' },
+  explaining: { label: '去讲解', dotColor: 'bg-blue-500' },
+  ready_to_sign: { label: '去签署', dotColor: 'bg-purple-500' },
+  completed: { label: '已归档', dotColor: 'bg-green-500' },
+  exception: { label: '去处理异常', dotColor: 'bg-red-500' },
 };
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
@@ -109,16 +125,19 @@ function normalizeStoreRecord(r: StoreSignRecord): UnifiedRecord {
     id: r.id,
     customerId: r.customerId,
     customerName: r.customerName,
-    phone: '-',
-    appointmentId: r.customerId,
+    phone: r.customerPhone ?? '-',
+    appointmentId: r.appointmentId ?? r.customerId,
     projectNames: r.projectNames,
     doctor: r.doctor,
     status: r.status,
     createTime: r.createTime,
     signerType: r.signerType,
     signerName: r.signerName,
+    guardianRelation: r.guardianRelation,
     explainedSections: r.explainedSections,
+    explainedSectionTitles: r.explainedSectionTitles,
     confirmedKeyRisks: r.confirmedKeyRisks,
+    confirmedKeyRiskTitles: r.confirmedKeyRiskTitles,
     customerSignature: r.customerSignature,
     keySentenceSignature: r.keySentenceSignature,
     preCheckStatus: {
@@ -126,6 +145,18 @@ function normalizeStoreRecord(r: StoreSignRecord): UnifiedRecord {
       allergy: r.allergyHistoryDone,
       medication: r.medicationHistoryDone,
     },
+    templateName: r.consentTemplateName,
+    consentTemplateName: r.consentTemplateName,
+    exceptionType: r.exceptionTypeLabel ?? r.exceptionType,
+    exceptionRemark: r.exceptionResolved ? '已解决' : undefined,
+    customerPhone: r.customerPhone,
+    customerIdCardLast4: r.customerIdCardLast4,
+    currentStep: r.currentStep,
+    signTime: r.signTime,
+    exceptionId: r.exceptionId,
+    exceptionResolved: r.exceptionResolved,
+    exceptionDescription: undefined,
+    exceptionMeasures: undefined,
   };
 }
 
@@ -143,6 +174,9 @@ function normalizeMockRecord(r: (typeof mockRecords)[number]): UnifiedRecord {
     templateName: r.templateName,
     exceptionType: r.exceptionType,
     exceptionRemark: r.exceptionRemark,
+    exceptionDescription: r.exceptionRemark,
+    exceptionMeasures: undefined,
+    exceptionResolved: r.exceptionRemark === '已解决',
   };
 }
 
@@ -241,8 +275,27 @@ export default function Archive() {
   };
 
   const handleNextAction = (r: UnifiedRecord) => {
-    const action = NEXT_ACTION_MAP[r.status];
-    if (action.route) navigate(action.route);
+    if (r.status === 'completed') return;
+    if (r.status === 'exception') {
+      navigate('/exception');
+      return;
+    }
+    const resumeSuccess = useSignFlowStore.getState().resumeSignRecord(r.id);
+    if (resumeSuccess) {
+      const targetRoute = STEP_ROUTE_MAP[r.currentStep ?? 0];
+      navigate(targetRoute);
+    } else {
+      alert('恢复签署记录失败，请重新进入流程');
+    }
+  };
+
+  const handleCopyId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      alert('签署编号已复制到剪贴板');
+    } catch {
+      alert('复制失败，请手动复制');
+    }
   };
 
   return (
@@ -487,10 +540,10 @@ export default function Archive() {
                           <td className="px-4 py-3">
                             <button
                               onClick={() => handleNextAction(r)}
-                              disabled={!action.route}
+                              disabled={r.status === 'completed'}
                               className={cn(
                                 'inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-sm transition-all',
-                                action.route
+                                r.status !== 'completed'
                                   ? 'text-primary-700 hover:bg-primary-50 cursor-pointer'
                                   : 'text-gray-400 cursor-default'
                               )}
@@ -577,37 +630,70 @@ export default function Archive() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">签署记录详情</h3>
-                <p className="mt-0.5 text-xs text-gray-500">签署编号：{detailRecord.id}</p>
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-semibold text-gray-900">签署记录详情</h3>
+                  <StatusBadge status={detailRecord.status} />
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="text-xs text-gray-500 font-mono">编号：{detailRecord.id}</p>
+                  <button
+                    onClick={() => handleCopyId(detailRecord.id)}
+                    className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-gray-500 hover:bg-gray-100 transition-colors"
+                    title="复制编号"
+                  >
+                    <Copy className="h-3 w-3" />
+                    复制
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => setDetailRecord(null)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDetailRecord(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="overflow-y-auto px-6 py-5 space-y-6" style={{ maxHeight: 'calc(85vh - 72px)' }}>
+            <div className="overflow-y-auto px-6 py-5 space-y-5" style={{ maxHeight: 'calc(85vh - 72px)' }}>
+              {detailRecord.consentTemplateName && (
+                <div className="rounded-lg border border-primary-200 bg-primary-50 p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-primary-700 mb-1">
+                    <FileText className="h-3.5 w-3.5" />
+                    知情同意书
+                  </div>
+                  <div className="text-sm font-medium text-primary-900">
+                    {detailRecord.consentTemplateName}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg bg-gray-50 p-4">
                   <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
                     <User className="h-3.5 w-3.5" />
                     顾客信息
                   </div>
-                  <div className="mt-2 space-y-1 text-sm">
-                    <div>
+                  <div className="mt-2 space-y-1.5 text-sm">
+                    <div className="flex justify-between">
                       <span className="text-gray-500">姓名：</span>
                       <span className="font-medium text-gray-900">{detailRecord.customerName}</span>
                     </div>
-                    <div>
+                    <div className="flex justify-between">
                       <span className="text-gray-500">电话：</span>
-                      <span className="text-gray-700">{detailRecord.phone}</span>
+                      <span className="text-gray-700 font-mono text-xs">{detailRecord.phone}</span>
                     </div>
-                    <div>
+                    {detailRecord.customerIdCardLast4 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">身份证：</span>
+                        <span className="text-gray-700 font-mono text-xs">****{detailRecord.customerIdCardLast4}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
                       <span className="text-gray-500">预约号：</span>
-                      <span className="font-mono text-gray-700">{detailRecord.appointmentId}</span>
+                      <span className="font-mono text-gray-700 text-xs">{detailRecord.appointmentId}</span>
                     </div>
                   </div>
                 </div>
@@ -617,22 +703,53 @@ export default function Archive() {
                     <Stethoscope className="h-3.5 w-3.5" />
                     就诊信息
                   </div>
-                  <div className="mt-2 space-y-1 text-sm">
-                    <div>
+                  <div className="mt-2 space-y-1.5 text-sm">
+                    <div className="flex justify-between">
                       <span className="text-gray-500">主治医生：</span>
                       <span className="font-medium text-gray-900">{detailRecord.doctor}</span>
                     </div>
-                    <div>
+                    <div className="flex justify-between">
                       <span className="text-gray-500">项目：</span>
-                      <span className="text-gray-700">{detailRecord.projectNames.join('、')}</span>
+                      <span className="text-gray-700 text-right">{detailRecord.projectNames.join('、')}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">状态：</span>
-                      <StatusBadge status={detailRecord.status} />
-                    </div>
+                    {detailRecord.signTime && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">签署时间：</span>
+                        <span className="text-gray-700 text-xs">{detailRecord.signTime}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {detailRecord.signerName && (
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-3">
+                    <User className="h-3.5 w-3.5" />
+                    签署人信息
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-0.5">类型</div>
+                      <div className="font-medium text-gray-900">
+                        {detailRecord.signerType
+                          ? SIGNER_TYPE_LABELS[detailRecord.signerType]
+                          : '-'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-0.5">姓名</div>
+                      <div className="font-medium text-gray-900">{detailRecord.signerName}</div>
+                    </div>
+                    {detailRecord.guardianRelation && (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-0.5">与本人关系</div>
+                        <div className="font-medium text-gray-900">{detailRecord.guardianRelation}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-3">
@@ -661,21 +778,96 @@ export default function Archive() {
                       key={item.key}
                       className={cn(
                         'flex items-center gap-2 rounded-lg px-3 py-2',
-                        item.done ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                        item.done ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
                       )}
                     >
-                      <span
+                      <Check
                         className={cn(
-                          'h-4 w-4 rounded-full flex items-center justify-center text-[10px] font-bold',
-                          item.done ? 'bg-green-500 text-white' : 'bg-gray-400 text-white'
+                          'h-4 w-4',
+                          item.done ? 'text-green-500' : 'text-red-400 opacity-50'
                         )}
-                      >
-                        {item.done ? '✓' : '✗'}
-                      </span>
+                      />
                       <span>{item.label}</span>
+                      <span className="ml-auto text-xs font-medium">
+                        {item.done ? '已完成' : '未完成'}
+                      </span>
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-3">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  讲解完成情况
+                </div>
+                {detailRecord.explainedSectionTitles && detailRecord.explainedSectionTitles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detailRecord.explainedSectionTitles.map((title, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 border border-green-200"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        {title}
+                      </span>
+                    ))}
+                  </div>
+                ) : detailRecord.explainedSections && detailRecord.explainedSections.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detailRecord.explainedSections.map((s, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 border border-green-200"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        已讲解
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-amber-600">
+                    <AlertCircle className="h-4 w-4" />
+                    无讲解记录，未完成知情告知
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-xs font-medium text-red-700 mb-3">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  关键风险确认
+                </div>
+                {detailRecord.confirmedKeyRiskTitles && detailRecord.confirmedKeyRiskTitles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detailRecord.confirmedKeyRiskTitles.map((title, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center rounded-md bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 border border-red-300"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        {title} 已确认
+                      </span>
+                    ))}
+                  </div>
+                ) : detailRecord.confirmedKeyRisks && detailRecord.confirmedKeyRisks.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detailRecord.confirmedKeyRisks.map((s, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center rounded-md bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 border border-red-300"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        关键风险已确认
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    关键风险未确认，不符合签署要求
+                  </div>
+                )}
               </div>
 
               <div className="rounded-lg border border-gray-200 p-4">
@@ -685,37 +877,37 @@ export default function Archive() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <div className="mb-2 text-xs text-gray-500">关键句签名</div>
-                    <div className="rounded-lg border border-gray-200 p-2 bg-gray-50 flex items-center justify-center h-20">
+                    <div className="mb-2 text-xs font-medium text-gray-600">关键句签名</div>
+                    <div className="rounded-lg border border-gray-200 p-2 bg-gray-50 flex items-center justify-center h-24">
                       {detailRecord.keySentenceSignature ? (
                         <img
                           src={detailRecord.keySentenceSignature}
                           alt="关键句签名"
-                          className="max-h-16 object-contain"
+                          className="max-h-20 object-contain"
                         />
                       ) : (
                         <img
                           src={getPlaceholderSignature(detailRecord.customerName)}
                           alt="关键句签名(示例)"
-                          className="max-h-16 object-contain opacity-60"
+                          className="max-h-20 object-contain opacity-60"
                         />
                       )}
                     </div>
                   </div>
                   <div>
-                    <div className="mb-2 text-xs text-gray-500">顾客签名</div>
-                    <div className="rounded-lg border border-gray-200 p-2 bg-gray-50 flex items-center justify-center h-20">
+                    <div className="mb-2 text-xs font-medium text-gray-600">顾客签名</div>
+                    <div className="rounded-lg border border-gray-200 p-2 bg-gray-50 flex items-center justify-center h-24">
                       {detailRecord.customerSignature ? (
                         <img
                           src={detailRecord.customerSignature}
                           alt="顾客签名"
-                          className="max-h-16 object-contain"
+                          className="max-h-20 object-contain"
                         />
                       ) : (
                         <img
                           src={getPlaceholderSignature(detailRecord.customerName)}
                           alt="顾客签名(示例)"
-                          className="max-h-16 object-contain opacity-60"
+                          className="max-h-20 object-contain opacity-60"
                         />
                       )}
                     </div>
@@ -741,67 +933,116 @@ export default function Archive() {
                 )}
               </div>
 
-              <div className="rounded-lg border border-gray-200 p-4">
-                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-3">
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  讲解项确认
-                </div>
-                {detailRecord.explainedSections && detailRecord.explainedSections.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {detailRecord.explainedSections.map((s) => (
-                      <span
-                        key={s}
-                        className="inline-flex items-center rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
-                      >
-                        ✓ {s}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">暂无讲解记录</div>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-gray-200 p-4">
-                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-3">
-                  <ShieldAlert className="h-3.5 w-3.5" />
-                  风险确认
-                </div>
-                {detailRecord.confirmedKeyRisks && detailRecord.confirmedKeyRisks.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {detailRecord.confirmedKeyRisks.map((r) => (
-                      <span
-                        key={r}
-                        className="inline-flex items-center rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
-                      >
-                        已确认 {r}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">暂无风险确认记录</div>
-                )}
-              </div>
-
-              {detailRecord.status === 'exception' && (detailRecord.exceptionType || detailRecord.exceptionRemark) && (
+              {detailRecord.status === 'exception' && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                  <div className="flex items-center gap-2 text-xs font-medium text-red-600 mb-2">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    异常信息
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-red-600">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      异常信息
+                    </div>
+                    {detailRecord.exceptionResolved ? (
+                      <span className="inline-flex items-center rounded-md bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 border border-green-200">
+                        <Check className="h-3 w-3 mr-1" />
+                        已解决
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-md bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 border border-red-200">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        处理中
+                      </span>
+                    )}
                   </div>
-                  {detailRecord.exceptionType && (
-                    <div className="text-sm text-red-700 font-medium">类型：{detailRecord.exceptionType}</div>
-                  )}
-                  {detailRecord.exceptionRemark && (
-                    <div className="mt-1 text-sm text-red-600">备注：{detailRecord.exceptionRemark}</div>
+                  <div className="space-y-2.5">
+                    {detailRecord.exceptionType && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">异常类型</span>
+                        <span className="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                          {detailRecord.exceptionType}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">解决状态</span>
+                      <span className={cn(
+                        'text-sm font-medium',
+                        detailRecord.exceptionResolved ? 'text-green-700' : 'text-red-600'
+                      )}>
+                        {detailRecord.exceptionResolved ? '已解决' : '未解决'}
+                      </span>
+                    </div>
+                    {(detailRecord.exceptionDescription || detailRecord.exceptionRemark) && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">异常描述</span>
+                        <span className="text-sm text-gray-700">
+                          {detailRecord.exceptionDescription || detailRecord.exceptionRemark}
+                        </span>
+                      </div>
+                    )}
+                    {detailRecord.exceptionMeasures && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">处理措施</span>
+                        <span className="text-sm text-gray-700">{detailRecord.exceptionMeasures}</span>
+                      </div>
+                    )}
+                  </div>
+                  {!detailRecord.exceptionResolved && (
+                    <button
+                      onClick={() => navigate('/exception')}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                      去处理
+                    </button>
                   )}
                 </div>
               )}
 
-              <div className="flex items-center gap-2 text-xs text-gray-400 pt-2 border-t border-gray-100">
-                <CalendarDays className="h-3.5 w-3.5" />
-                创建时间：{detailRecord.createTime}
+              <div className="space-y-1.5 pt-2 border-t border-gray-100">
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  创建时间：{detailRecord.createTime}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <Clock className="h-3.5 w-3.5" />
+                  打印时间：{new Date().toLocaleString('zh-CN')}
+                </div>
               </div>
+            </div>
+
+            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
+              {detailRecord.status === 'completed' ? (
+                <button
+                  onClick={() => navigate(`/receipt/${detailRecord.id}`)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+                >
+                  <FileText className="h-4 w-4" />
+                  查看完整回执
+                </button>
+              ) : detailRecord.status === 'exception' ? (
+                <button
+                  onClick={() => navigate('/exception')}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  处理异常
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const resumeSuccess = useSignFlowStore.getState().resumeSignRecord(detailRecord.id);
+                    if (resumeSuccess) {
+                      const targetRoute = STEP_ROUTE_MAP[detailRecord.currentStep ?? 0];
+                      navigate(targetRoute);
+                    } else {
+                      alert('恢复签署记录失败，请重新进入流程');
+                    }
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  继续签署流程
+                </button>
+              )}
             </div>
           </div>
         </div>

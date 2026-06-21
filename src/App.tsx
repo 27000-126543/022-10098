@@ -5,6 +5,7 @@ import RiskExplain from "@/pages/RiskExplain";
 import ESign from "@/pages/ESign";
 import Archive from "@/pages/Archive";
 import ExceptionPage from "@/pages/Exception";
+import ReceiptPreview from "@/pages/ReceiptPreview";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/sign" element={<ESign />} />
         <Route path="/archive" element={<Archive />} />
         <Route path="/exception" element={<ExceptionPage />} />
+        <Route path="/receipt/:id" element={<ReceiptPreview />} />
       </Routes>
     </Router>
   );

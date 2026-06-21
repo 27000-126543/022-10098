@@ -10,6 +10,7 @@ import {
   Download,
   Home,
   User,
+  Eye,
 } from 'lucide-react';
 import { useSignFlowStore } from '@/store/signFlow';
 import PageTransition from '@/components/PageTransition';
@@ -46,6 +47,7 @@ export default function ESign() {
   const {
     currentCustomer,
     selectedProjects,
+    currentTemplate,
     signerType,
     signerName,
     guardianRelation,
@@ -61,6 +63,7 @@ export default function ESign() {
     setKeySentenceSignature,
     setCustomerSignature,
     addSignRecord,
+    setActiveSignRecordId,
     resetAll,
   } = useSignFlowStore();
 
@@ -127,18 +130,33 @@ export default function ESign() {
     const now = new Date().toISOString();
     const recordId = generateId('sign');
 
+    const explainedSectionTitles: string[] = explainedSections
+      .map((id) => currentTemplate?.sections?.find((s) => s.id === id)?.title as string | undefined)
+      .filter((title): title is string => !!title);
+
+    const confirmedKeyRiskTitles: string[] = confirmedKeyRisks
+      .map((id) => currentTemplate?.sections?.find((s) => s.id === id)?.title as string | undefined)
+      .filter((title): title is string => !!title);
+
     const record: SignRecord = {
       id: recordId,
       customerId: currentCustomer?.id ?? '',
       customerName: currentCustomer?.name ?? '',
+      customerPhone: currentCustomer?.phone ?? '',
+      customerIdCardLast4: currentCustomer?.idCardLast4 ?? '',
+      appointmentId: currentCustomer?.appointmentId ?? '',
       projectIds: selectedProjects.map((p) => p.id),
       projectNames: selectedProjects.map((p) => p.name),
       doctor: currentCustomer?.doctor ?? '',
+      consentTemplateId: currentTemplate?.id ?? '',
+      consentTemplateName: currentTemplate?.name ?? '',
       signerType,
       signerName: effectiveName,
       guardianRelation: signerType !== 'self' ? guardianRelation : undefined,
       explainedSections: [...explainedSections],
+      explainedSectionTitles,
       confirmedKeyRisks: [...confirmedKeyRisks],
+      confirmedKeyRiskTitles,
       keySentenceSignature: keySentenceDataUrl ?? '',
       customerSignature: signatureDataUrl ?? '',
       preOpPhotoDone: preCheckStatus.photo,
@@ -152,6 +170,7 @@ export default function ESign() {
     };
 
     addSignRecord(record);
+    setActiveSignRecordId(recordId);
     setReceiptRecord(record);
     setShowReceipt(true);
   };
@@ -561,6 +580,13 @@ export default function ESign() {
               >
                 <Download className="h-4 w-4" />
                 下载回执PDF
+              </button>
+              <button
+                onClick={() => navigate(`/receipt/${receiptRecord?.id}`)}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Eye className="h-4 w-4" />
+                查看完整回执
               </button>
               <button
                 onClick={handleBackToHome}

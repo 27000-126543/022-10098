@@ -64,14 +64,21 @@ export interface SignRecord {
   id: string;
   customerId: string;
   customerName: string;
+  customerPhone: string;
+  customerIdCardLast4: string;
+  appointmentId: string;
   projectIds: string[];
   projectNames: string[];
   doctor: string;
+  consentTemplateId: string;
+  consentTemplateName: string;
   signerType: SignerType;
   signerName: string;
   guardianRelation?: string;
   explainedSections: string[];
+  explainedSectionTitles: string[];
   confirmedKeyRisks: string[];
+  confirmedKeyRiskTitles: string[];
   keySentenceSignature: string;
   customerSignature: string;
   preOpPhotoDone: boolean;
@@ -83,11 +90,21 @@ export interface SignRecord {
   signTime?: string;
   createTime: string;
   exceptionId?: string;
+  exceptionType?: string;
+  exceptionTypeLabel?: string;
+  exceptionResolved?: boolean;
 }
+
+export type ExceptionProgress =
+  | 'reported'
+  | 'investigating'
+  | 'resolved'
+  | 'sign_resumed';
 
 export interface ExceptionRecord {
   id: string;
   customerId: string;
+  customerName: string;
   signRecordId?: string;
   type:
     | 'info_mismatch'
@@ -102,7 +119,44 @@ export interface ExceptionRecord {
   measures: string;
   resolved: boolean;
   resolvedTime?: string;
+  progress: ExceptionProgress;
+  urgency: 'normal' | 'urgent' | 'critical';
+  timeline: Array<{
+    time: string;
+    action: string;
+    operator: string;
+  }>;
 }
+
+export const EXCEPTION_TYPE_LABELS: Record<ExceptionRecord['type'], string> = {
+  info_mismatch: '顾客信息与预约不符',
+  customer_refused: '顾客放弃签署/拒签',
+  device_failure: '设备/系统故障',
+  incomplete_info: '术前信息无法补齐',
+  other: '其他异常',
+};
+
+export const EXCEPTION_PROGRESS_LABELS: Record<ExceptionProgress, string> = {
+  reported: '已登记',
+  investigating: '处理中',
+  resolved: '已解决',
+  sign_resumed: '已重启签署',
+};
+
+export const STEP_ROUTE_MAP: Record<number, string> = {
+  0: '/',
+  1: '/projects',
+  2: '/risk-explain',
+  3: '/sign',
+  4: '/archive',
+  5: '/archive',
+};
+
+export const SIGNER_TYPE_LABELS: Record<SignerType, string> = {
+  self: '本人',
+  guardian: '监护人',
+  representative: '代签人',
+};
 
 export interface AppState {
   currentCustomer: Customer | null;
