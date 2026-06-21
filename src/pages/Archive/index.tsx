@@ -31,7 +31,8 @@ import StatusBadge from '@/components/StatusBadge';
 import { records as mockRecords } from '@/data/records';
 import { useSignFlowStore } from '@/store/signFlow';
 import type { SignStatus, SignRecord as StoreSignRecord, SignerType } from '@/types';
-import { SIGNER_TYPE_LABELS, STEP_ROUTE_MAP } from '@/types';
+import { SIGNER_TYPE_LABELS, STEP_ROUTE_MAP, EXCEPTION_PROGRESS_LABELS } from '@/types';
+import type { ExceptionProgress } from '@/types';
 
 type UnifiedRecord = {
   id: string;
@@ -65,6 +66,7 @@ type UnifiedRecord = {
   exceptionResolved?: boolean;
   exceptionDescription?: string;
   exceptionMeasures?: string;
+  exceptionProgress?: ExceptionProgress;
 };
 
 const DOCTOR_OPTIONS = ['全部', '张医生', '李医生', '王医生'] as const;
@@ -155,12 +157,14 @@ function normalizeStoreRecord(r: StoreSignRecord): UnifiedRecord {
     signTime: r.signTime,
     exceptionId: r.exceptionId,
     exceptionResolved: r.exceptionResolved,
-    exceptionDescription: undefined,
-    exceptionMeasures: undefined,
+    exceptionDescription: r.exceptionDescription,
+    exceptionMeasures: r.exceptionMeasures,
+    exceptionProgress: r.exceptionProgress,
   };
 }
 
 function normalizeMockRecord(r: (typeof mockRecords)[number]): UnifiedRecord {
+  const isResolved = r.exceptionRemark === '已解决';
   return {
     id: r.id,
     customerId: r.customerId,
@@ -176,7 +180,8 @@ function normalizeMockRecord(r: (typeof mockRecords)[number]): UnifiedRecord {
     exceptionRemark: r.exceptionRemark,
     exceptionDescription: r.exceptionRemark,
     exceptionMeasures: undefined,
-    exceptionResolved: r.exceptionRemark === '已解决',
+    exceptionResolved: isResolved,
+    exceptionProgress: isResolved ? 'resolved' : r.exceptionType ? 'investigating' : undefined,
   };
 }
 
@@ -276,17 +281,13 @@ export default function Archive() {
 
   const handleNextAction = (r: UnifiedRecord) => {
     if (r.status === 'completed') return;
-    if (r.status === 'exception') {
+    if (r.status === 'exception' && !r.exceptionResolved) {
       navigate('/exception');
       return;
     }
-    const resumeSuccess = useSignFlowStore.getState().resumeSignRecord(r.id);
-    if (resumeSuccess) {
-      const targetRoute = STEP_ROUTE_MAP[r.currentStep ?? 0];
-      navigate(targetRoute);
-    } else {
-      alert('恢复签署记录失败，请重新进入流程');
-    }
+    useSignFlowStore.getState().resumeSignRecord(r.id);
+    const targetRoute = STEP_ROUTE_MAP[r.currentStep ?? 0];
+    navigate(targetRoute);
   };
 
   const handleCopyId = async (id: string) => {
@@ -540,10 +541,10 @@ export default function Archive() {
                           <td className="px-4 py-3">
                             <button
                               onClick={() => handleNextAction(r)}
-                              disabled={r.status === 'completed'}
+                              disabled={r.status === 'completed' || (r.status === 'exception' && !r.exceptionResolved)}
                               className={cn(
                                 'inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-sm transition-all',
-                                r.status !== 'completed'
+                                r.status !== 'completed' && !(r.status === 'exception' && !r.exceptionResolved)
                                   ? 'text-primary-700 hover:bg-primary-50 cursor-pointer'
                                   : 'text-gray-400 cursor-default'
                               )}
@@ -955,43 +956,70 @@ export default function Archive() {
                   <div className="space-y-2.5">
                     {detailRecord.exceptionType && (
                       <div className="flex items-start gap-2">
-                        <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">异常类型</span>
+                        <span className="text-xs text-gray-500 mt-0.5 w-20 shrink-0">异常类型</span>
                         <span className="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
                           {detailRecord.exceptionType}
                         </span>
                       </div>
                     )}
                     <div className="flex items-start gap-2">
-                      <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">解决状态</span>
+                      <span className="text-xs text-gray-500 mt-0.5 w-20 shrink-0">解决状态</span>
                       <span className={cn(
-                        'text-sm font-medium',
+                        'inline-flex items-center gap-1 text-sm font-medium',
                         detailRecord.exceptionResolved ? 'text-green-700' : 'text-red-600'
                       )}>
-                        {detailRecord.exceptionResolved ? '已解决' : '未解决'}
+                        <span className={cn(
+                          'h-2 w-2 rounded-full',
+                          detailRecord.exceptionResolved ? 'bg-green-500' : 'bg-red-500'
+                        )} />
+                        {detailRecord.exceptionResolved ? '已解决' : '处理中'}
                       </span>
                     </div>
+                    {detailRecord.exceptionProgress && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs text-gray-500 mt-0.5 w-20 shrink-0">处理进度</span>
+                        <span className={cn(
+                          'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium',
+                          detailRecord.exceptionProgress === 'reported' && 'bg-gray-100 text-gray-700',
+                          detailRecord.exceptionProgress === 'investigating' && 'bg-amber-100 text-amber-700',
+                          detailRecord.exceptionProgress === 'resolved' && 'bg-green-100 text-green-700',
+                          detailRecord.exceptionProgress === 'sign_resumed' && 'bg-blue-100 text-blue-700'
+                        )}>
+                          {EXCEPTION_PROGRESS_LABELS[detailRecord.exceptionProgress]}
+                        </span>
+                      </div>
+                    )}
                     {(detailRecord.exceptionDescription || detailRecord.exceptionRemark) && (
                       <div className="flex items-start gap-2">
-                        <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">异常描述</span>
+                        <span className="text-xs text-gray-500 mt-0.5 w-20 shrink-0">异常描述</span>
                         <span className="text-sm text-gray-700">
-                          {detailRecord.exceptionDescription || detailRecord.exceptionRemark}
+                          {detailRecord.exceptionDescription ?? detailRecord.exceptionRemark}
                         </span>
                       </div>
                     )}
                     {detailRecord.exceptionMeasures && (
                       <div className="flex items-start gap-2">
-                        <span className="text-xs text-gray-500 mt-0.5 w-16 shrink-0">处理措施</span>
+                        <span className="text-xs text-gray-500 mt-0.5 w-20 shrink-0">处理措施</span>
                         <span className="text-sm text-gray-700">{detailRecord.exceptionMeasures}</span>
                       </div>
                     )}
                   </div>
+                  {detailRecord.exceptionResolved && (
+                    <button
+                      onClick={() => handleNextAction(detailRecord)}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      继续签署流程
+                    </button>
+                  )}
                   {!detailRecord.exceptionResolved && (
                     <button
                       onClick={() => navigate('/exception')}
                       className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
                     >
                       <AlertTriangle className="h-4 w-4" />
-                      去处理
+                      处理异常
                     </button>
                   )}
                 </div>
@@ -1018,7 +1046,15 @@ export default function Archive() {
                   <FileText className="h-4 w-4" />
                   查看完整回执
                 </button>
-              ) : detailRecord.status === 'exception' ? (
+              ) : detailRecord.status === 'exception' && detailRecord.exceptionResolved ? (
+                <button
+                  onClick={() => handleNextAction(detailRecord)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  继续签署流程
+                </button>
+              ) : detailRecord.status === 'exception' && !detailRecord.exceptionResolved ? (
                 <button
                   onClick={() => navigate('/exception')}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 transition-colors"
@@ -1028,15 +1064,7 @@ export default function Archive() {
                 </button>
               ) : (
                 <button
-                  onClick={() => {
-                    const resumeSuccess = useSignFlowStore.getState().resumeSignRecord(detailRecord.id);
-                    if (resumeSuccess) {
-                      const targetRoute = STEP_ROUTE_MAP[detailRecord.currentStep ?? 0];
-                      navigate(targetRoute);
-                    } else {
-                      alert('恢复签署记录失败，请重新进入流程');
-                    }
-                  }}
+                  onClick={() => handleNextAction(detailRecord)}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
                 >
                   <RotateCcw className="h-4 w-4" />

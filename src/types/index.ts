@@ -92,6 +92,9 @@ export interface SignRecord {
   exceptionId?: string;
   exceptionType?: string;
   exceptionTypeLabel?: string;
+  exceptionDescription?: string;
+  exceptionMeasures?: string;
+  exceptionProgress?: ExceptionProgress;
   exceptionResolved?: boolean;
 }
 

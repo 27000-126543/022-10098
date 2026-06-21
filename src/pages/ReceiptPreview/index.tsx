@@ -21,8 +21,11 @@ import { useSignFlowStore } from '@/store/signFlow';
 import NavBar from '@/components/NavBar';
 import PageTransition from '@/components/PageTransition';
 import { SIGNER_TYPE_LABELS } from '@/types';
+import { signStatusMap } from '@/data/records';
 import { cn } from '@/lib/utils';
 import { templates } from '@/data/templates';
+import { records as mockRecords } from '@/data/records';
+import type { SignRecord } from '@/types';
 
 function formatDateTime(isoStr: string): string {
   const d = new Date(isoStr);
@@ -62,7 +65,53 @@ export default function ReceiptPreview() {
 
   const record = useMemo(() => {
     if (!id) return null;
-    return signRecords.find((r) => r.id === id) || null;
+    const storeRecord = signRecords.find((r) => r.id === id);
+    if (storeRecord) return storeRecord;
+
+    const mockRecord = mockRecords.find((r) => r.id === id);
+    if (mockRecord) {
+      const statusStepMap: Record<string, number> = {
+        pending: 0,
+        explaining: 2,
+        ready_to_sign: 3,
+        completed: 4,
+        exception: 0,
+      };
+      const constructed: SignRecord = {
+        id: mockRecord.id,
+        customerId: mockRecord.customerId,
+        customerName: mockRecord.customerName,
+        customerPhone: mockRecord.phone,
+        customerIdCardLast4: '0000',
+        appointmentId: mockRecord.id,
+        projectIds: [mockRecord.projectId],
+        projectNames: [mockRecord.projectName],
+        doctor: mockRecord.doctor,
+        consentTemplateId: mockRecord.templateId,
+        consentTemplateName: mockRecord.templateName,
+        preOpPhotoDone: false,
+        allergyHistoryDone: false,
+        medicationHistoryDone: false,
+        signerType: 'self',
+        signerName: mockRecord.customerName,
+        explainedSections: [],
+        explainedSectionTitles: [],
+        confirmedKeyRisks: [],
+        confirmedKeyRiskTitles: [],
+        keySentenceSignature: '',
+        customerSignature: '',
+        currentStep: statusStepMap[mockRecord.status] ?? 0,
+        nextAction: mockRecord.nextAction ?? '',
+        exceptionType: mockRecord.exceptionType,
+        exceptionTypeLabel: mockRecord.exceptionType,
+        exceptionDescription: mockRecord.exceptionRemark,
+        status: mockRecord.status,
+        createTime: mockRecord.signDate + (mockRecord.signTime && mockRecord.signTime !== '-' ? ' ' + mockRecord.signTime : ''),
+        signTime: mockRecord.completedAt,
+      };
+      return constructed;
+    }
+    return null;
   }, [id, signRecords]);
 
   const allSectionTitles = useMemo(() => {
@@ -121,9 +170,11 @@ export default function ReceiptPreview() {
     );
   }
 
-  const gender = getGenderFromId(record.customerIdCardLast4);
+  const gender = getGenderFromId(record.customerIdCardLast4 ?? '');
   const age = calculateAge();
   const printTime = new Date().toISOString();
+  const statusInfo = signStatusMap[record.status];
+  const fallbackName = record.customerName ?? '未知';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -208,13 +259,22 @@ export default function ReceiptPreview() {
                 {record.id}
               </div>
             </div>
-            <button
-              onClick={handleCopyId}
-              className="no-print inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-all hover:bg-gray-50"
-            >
-              <Copy className="h-3.5 w-3.5" />
-              复制
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-xs font-medium text-gray-500 mb-1">签署状态</div>
+                <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium" style={{ backgroundColor: `${statusInfo.color}20`, color: statusInfo.color }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusInfo.color }} />
+                  {statusInfo.label}
+                </div>
+              </div>
+              <button
+                onClick={handleCopyId}
+                className="no-print inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-all hover:bg-gray-50"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                复制
+              </button>
+            </div>
           </div>
 
           <div className="mb-6">
@@ -225,7 +285,7 @@ export default function ReceiptPreview() {
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div className="space-y-0.5">
                 <div className="text-xs text-gray-500">姓名</div>
-                <div className="font-medium text-gray-900">{record.customerName}</div>
+                <div className="font-medium text-gray-900">{record.customerName ?? '-'}</div>
               </div>
               <div className="space-y-0.5">
                 <div className="text-xs text-gray-500">性别</div>
@@ -238,18 +298,18 @@ export default function ReceiptPreview() {
               <div className="space-y-0.5">
                 <div className="text-xs text-gray-500">手机号</div>
                 <div className="font-mono font-medium text-gray-900">
-                  {maskPhone(record.customerPhone)}
+                  {maskPhone(record.customerPhone ?? '')}
                 </div>
               </div>
               <div className="space-y-0.5">
                 <div className="text-xs text-gray-500">身份证后四位</div>
                 <div className="font-mono font-medium text-gray-900">
-                  {record.customerIdCardLast4}
+                  {record.customerIdCardLast4 ?? '-'}
                 </div>
               </div>
               <div className="space-y-0.5">
                 <div className="text-xs text-gray-500">预约号</div>
-                <div className="font-mono font-medium text-gray-900">{record.appointmentId}</div>
+                <div className="font-mono font-medium text-gray-900">{record.appointmentId ?? '-'}</div>
               </div>
             </div>
           </div>
@@ -262,7 +322,7 @@ export default function ReceiptPreview() {
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-4">
                 <div className="w-20 shrink-0 text-xs text-gray-500">主治医生</div>
-                <div className="font-medium text-gray-900">{record.doctor}</div>
+                <div className="font-medium text-gray-900">{record.doctor ?? '-'}</div>
               </div>
               <div className="flex items-start gap-4">
                 <div className="w-20 shrink-0 text-xs text-gray-500">签署时间</div>
@@ -273,7 +333,7 @@ export default function ReceiptPreview() {
               <div className="flex items-start gap-4">
                 <div className="w-20 shrink-0 text-xs text-gray-500">项目列表</div>
                 <div className="flex flex-wrap gap-2">
-                  {record.projectNames.map((name, i) => (
+                  {(record.projectNames ?? []).map((name, i) => (
                     <span
                       key={i}
                       className="inline-flex items-center rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 border border-primary-100"
@@ -294,15 +354,15 @@ export default function ReceiptPreview() {
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-4">
                 <div className="w-28 shrink-0 text-xs text-gray-500">同意书名称</div>
-                <div className="font-medium text-gray-900">{record.consentTemplateName}</div>
+                <div className="font-medium text-gray-900">{record.consentTemplateName ?? '-'}</div>
               </div>
               <div className="flex items-start gap-4">
                 <div className="w-28 shrink-0 text-xs text-gray-500">签署人信息</div>
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                    {SIGNER_TYPE_LABELS[record.signerType]}
+                    {SIGNER_TYPE_LABELS[record.signerType ?? 'self']}
                   </span>
-                  <span className="font-medium text-gray-900">{record.signerName}</span>
+                  <span className="font-medium text-gray-900">{record.signerName ?? '-'}</span>
                   {record.guardianRelation && (
                     <span className="text-xs text-gray-500">
                       （与本人关系：{record.guardianRelation}）
@@ -436,7 +496,7 @@ export default function ReceiptPreview() {
                   <img
                     src={
                       record.keySentenceSignature ||
-                      getPlaceholderSignature(record.customerName)
+                      getPlaceholderSignature(fallbackName)
                     }
                     alt="关键句签名"
                     className="max-h-20 max-w-full object-contain"
@@ -451,7 +511,7 @@ export default function ReceiptPreview() {
                   <img
                     src={
                       record.customerSignature ||
-                      getPlaceholderSignature(record.customerName)
+                      getPlaceholderSignature(fallbackName)
                     }
                     alt="顾客签名"
                     className="max-h-20 max-w-full object-contain"

@@ -12,10 +12,66 @@ import type {
 import { customers } from '@/data/customers';
 import { projects } from '@/data/projects';
 import { templates } from '@/data/templates';
+import { records as mockRecords } from '@/data/records';
 import { STEP_ROUTE_MAP } from '@/types';
+import type { SignRecord as MockSignRecord } from '@/data/records';
 
 const STORAGE_KEY = 'medical_sign_flow_records_v1';
 const EXCEPTION_STORAGE_KEY = 'medical_sign_flow_exceptions_v1';
+
+function convertMockRecord(r: MockSignRecord): SignRecord {
+  const statusStepMap: Record<string, number> = {
+    pending: 0,
+    explaining: 2,
+    ready_to_sign: 3,
+    completed: 4,
+    exception: 0,
+  };
+
+  return {
+    id: r.id,
+    customerId: r.customerId,
+    customerName: r.customerName,
+    customerPhone: r.phone,
+    customerIdCardLast4: '0000',
+    appointmentId: r.id,
+    projectIds: [r.projectId],
+    projectNames: [r.projectName],
+    doctor: r.doctor,
+    consentTemplateId: r.templateId,
+    consentTemplateName: r.templateName,
+    preOpPhotoDone: false,
+    allergyHistoryDone: false,
+    medicationHistoryDone: false,
+    signerType: 'self',
+    signerName: r.customerName,
+    explainedSections: [],
+    explainedSectionTitles: [],
+    confirmedKeyRisks: [],
+    confirmedKeyRiskTitles: [],
+    keySentenceSignature: '',
+    customerSignature: '',
+    currentStep: statusStepMap[r.status] ?? 0,
+    nextAction: r.nextAction ?? '',
+    exceptionType: r.exceptionType,
+    exceptionTypeLabel: r.exceptionType,
+    exceptionDescription: r.exceptionRemark,
+    status: r.status,
+    createTime: r.signDate + (r.signTime && r.signTime !== '-' ? ' ' + r.signTime : ''),
+    signTime: r.completedAt,
+  };
+}
+
+function convertMockRecords(): SignRecord[] {
+  return mockRecords.map(convertMockRecord);
+}
+
+function mergeRecords(persisted: SignRecord[], mock: SignRecord[]): SignRecord[] {
+  const map = new Map<string, SignRecord>();
+  mock.forEach((r) => map.set(r.id, r));
+  persisted.forEach((r) => map.set(r.id, r));
+  return Array.from(map.values());
+}
 
 function loadPersistedRecords(): SignRecord[] {
   try {
@@ -95,7 +151,7 @@ interface SignFlowActions {
   addExceptionRecord: (record: ExceptionRecord) => void;
   updateExceptionRecord: (id: string, patch: Partial<ExceptionRecord>) => void;
   resolveException: (exceptionId: string, measures: string) => void;
-  restartSignFromException: (exceptionId: string) => string | null;
+  restartSignFromException: (exceptionId: string) => string;
   setActiveSignRecordId: (id: string | null) => void;
   resetAll: () => void;
 }
@@ -118,7 +174,7 @@ const initialInnerState: Omit<SignFlowState, 'signRecords' | 'exceptionRecords'>
 export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
   (set, get) => ({
     ...initialInnerState,
-    signRecords: loadPersistedRecords(),
+    signRecords: mergeRecords(loadPersistedRecords(), convertMockRecords()),
     exceptionRecords: loadPersistedExceptions(),
 
     setCustomer: (customer) => set({ currentCustomer: customer }),
@@ -213,32 +269,74 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
       const record = state.signRecords.find((r) => r.id === recordId);
       if (!record) return false;
 
-      const customer = customers.find((c) => c.id === record.customerId);
-      const selectedProjs = projects.filter((p) =>
-        record.projectIds.includes(p.id)
-      );
-      const template = templates.find(
+      let customer = customers.find((c) => c.id === record.customerId);
+      if (!customer) {
+        customer = customers.find((c) => c.name === record.customerName);
+      }
+      if (!customer) {
+        customer = {
+          id: record.customerId,
+          name: record.customerName,
+          phone: record.customerPhone ?? record.customerId,
+          idCardLast4: record.customerIdCardLast4 ?? '0000',
+          appointmentId: record.appointmentId ?? record.id,
+          appointmentDate: record.createTime?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+          doctor: record.doctor,
+        };
+      }
+
+      let selectedProjs: ProjectItem[] = projects.filter((p) =>
+        record.projectIds?.includes(p.id)
+      ) as unknown as ProjectItem[];
+      if (selectedProjs.length === 0 && record.projectNames) {
+        selectedProjs = projects.filter((p) =>
+          record.projectNames.some((name) => p.name === name)
+        ) as unknown as ProjectItem[];
+      }
+      if (selectedProjs.length === 0 && record.projectNames) {
+        selectedProjs = record.projectNames.map((name, idx) => ({
+          id: record.projectIds?.[idx] ?? `PROJ-MOCK-${idx}`,
+          name,
+          category: 'other' as const,
+          categoryLabel: '其他',
+          consentTemplateId: record.consentTemplateId ?? '',
+        }));
+      }
+
+      let template = templates.find(
         (t) => t.id === record.consentTemplateId
       );
-
-      if (!customer || selectedProjs.length === 0 || !template) return false;
+      if (!template && record.consentTemplateName) {
+        template = templates.find(
+          (t) => t.name === record.consentTemplateName
+        );
+      }
+      if (!template && selectedProjs.length > 0) {
+        const category = selectedProjs[0].category;
+        template = templates.find((t) =>
+          t.applicableProjects.includes(selectedProjs[0].id)
+        );
+      }
+      if (!template) {
+        template = templates[0];
+      }
 
       set({
         currentCustomer: customer,
         selectedProjects: selectedProjs as unknown as ProjectItem[],
         currentTemplate: template as unknown as ConsentTemplate,
-        explainedSections: record.explainedSections,
-        confirmedKeyRisks: record.confirmedKeyRisks,
+        explainedSections: record.explainedSections ?? [],
+        confirmedKeyRisks: record.confirmedKeyRisks ?? [],
         preCheckStatus: {
-          photo: record.preOpPhotoDone,
-          allergy: record.allergyHistoryDone,
-          medication: record.medicationHistoryDone,
+          photo: record.preOpPhotoDone ?? false,
+          allergy: record.allergyHistoryDone ?? false,
+          medication: record.medicationHistoryDone ?? false,
         },
-        signerType: record.signerType,
-        signerName: record.signerName,
+        signerType: record.signerType ?? 'self',
+        signerName: record.signerName ?? record.customerName,
         guardianRelation: record.guardianRelation ?? '',
-        keySentenceDataUrl: record.keySentenceSignature,
-        signatureDataUrl: record.customerSignature,
+        keySentenceDataUrl: record.keySentenceSignature ?? null,
+        signatureDataUrl: record.customerSignature ?? null,
         activeSignRecordId: recordId,
       });
 
@@ -260,6 +358,10 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
                   exceptionId: record.id,
                   exceptionType: record.type,
                   exceptionTypeLabel: record.typeLabel,
+                  exceptionDescription: record.description,
+                  exceptionMeasures: record.measures,
+                  exceptionProgress: record.progress,
+                  exceptionResolved: false,
                 }
               : r
           );
@@ -312,7 +414,12 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
         if (exception?.signRecordId) {
           nextSignRecords = state.signRecords.map((r) =>
             r.id === exception.signRecordId
-              ? { ...r, exceptionResolved: true }
+              ? {
+                  ...r,
+                  exceptionMeasures: measures,
+                  exceptionProgress: 'resolved' as ExceptionProgress,
+                  exceptionResolved: true,
+                }
               : r
           );
           persistRecords(nextSignRecords);
@@ -329,12 +436,24 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
       const exception = state.exceptionRecords.find(
         (e) => e.id === exceptionId
       );
-      if (!exception?.signRecordId) return null;
 
-      const signRecord = state.signRecords.find(
+      if (!exception?.signRecordId) {
+        return '/';
+      }
+
+      let signRecord = state.signRecords.find(
         (r) => r.id === exception.signRecordId
       );
-      if (!signRecord) return null;
+
+      if (!signRecord) {
+        signRecord = state.signRecords.find(
+          (r) => r.customerId === exception.customerId
+        );
+      }
+
+      if (!signRecord) {
+        return '/';
+      }
 
       const stepStatus: SignStatus =
         signRecord.currentStep <= 1
@@ -376,8 +495,7 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
         exceptionRecords: nextExceptions,
       });
 
-      const resumed = get().resumeSignRecord(signRecord.id);
-      if (!resumed) return null;
+      get().resumeSignRecord(signRecord.id);
 
       return STEP_ROUTE_MAP[signRecord.currentStep] ?? '/';
     },
