@@ -28,6 +28,7 @@ function convertMockRecord(r: MockSignRecord): SignRecord {
     exception: 0,
   };
 
+  const isException = r.status === 'exception';
   return {
     id: r.id,
     customerId: r.customerId,
@@ -56,6 +57,8 @@ function convertMockRecord(r: MockSignRecord): SignRecord {
     exceptionType: r.exceptionType,
     exceptionTypeLabel: r.exceptionType,
     exceptionDescription: r.exceptionRemark,
+    exceptionResolved: isException ? false : undefined,
+    exceptionProgress: isException ? ('reported' as ExceptionProgress) : undefined,
     status: r.status,
     createTime: r.signDate + (r.signTime && r.signTime !== '-' ? ' ' + r.signTime : ''),
     signTime: r.completedAt,
@@ -407,7 +410,7 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
         );
         persistExceptions(nextExceptions);
 
-        const exception = state.exceptionRecords.find(
+        const exception = nextExceptions.find(
           (e) => e.id === exceptionId
         );
         let nextSignRecords = state.signRecords;

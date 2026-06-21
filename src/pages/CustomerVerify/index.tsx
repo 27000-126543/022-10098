@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Phone, CreditCard, Check, ScanLine, QrCode } from 'lucide-react';
+import { User, Phone, CreditCard, Check, ScanLine, QrCode, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import NavBar from '@/components/NavBar';
 import PageTransition from '@/components/PageTransition';
@@ -13,10 +13,21 @@ type TabKey = 'scan' | 'manual';
 
 export default function CustomerVerify() {
   const navigate = useNavigate();
-  const setCustomer = useSignFlowStore((s) => s.setCustomer);
+  const {
+    setCustomer,
+    currentCustomer,
+    activeSignRecordId,
+    setActiveSignRecordId,
+  } = useSignFlowStore();
 
   const [activeTab, setActiveTab] = useState<TabKey>('scan');
   const [customer, setLocalCustomer] = useState<Customer | null>(null);
+
+  useEffect(() => {
+    if (currentCustomer && !customer) {
+      setLocalCustomer(currentCustomer);
+    }
+  }, [currentCustomer, customer]);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -80,34 +91,55 @@ export default function CustomerVerify() {
         </div>
         <StepIndicator currentStep={0} />
 
-        <div className="mx-auto mb-8 flex w-fit items-center gap-1 rounded-xl bg-gray-100 p-1">
-          <button
-            onClick={() => setActiveTab('scan')}
-            className={cn(
-              'flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all duration-200',
-              activeTab === 'scan'
-                ? 'bg-white text-primary-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            )}
-          >
-            <QrCode className="h-4 w-4" />
-            扫码核验
-          </button>
-          <button
-            onClick={() => setActiveTab('manual')}
-            className={cn(
-              'flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all duration-200',
-              activeTab === 'manual'
-                ? 'bg-white text-primary-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            )}
-          >
-            <ScanLine className="h-4 w-4" />
-            手动输入
-          </button>
-        </div>
+        {activeSignRecordId && (
+          <div className="mx-auto mb-6 flex max-w-3xl items-center justify-between gap-4 rounded-xl border border-cyan-200 bg-cyan-50 px-5 py-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-cyan-800">
+              <Info className="h-5 w-5" />
+              <span>已从签署记录恢复顾客信息，核对无误后可直接进入下一步</span>
+            </div>
+            <button
+              onClick={() => {
+                setLocalCustomer(null);
+                setCustomer(null);
+                setActiveSignRecordId(null);
+              }}
+              className="rounded-lg border border-cyan-300 bg-white px-4 py-1.5 text-sm font-medium text-cyan-700 transition-all duration-200 hover:bg-cyan-100"
+            >
+              重新核验新顾客
+            </button>
+          </div>
+        )}
 
-        {activeTab === 'scan' && (
+        {!customer && (
+          <>
+            <div className="mx-auto mb-8 flex w-fit items-center gap-1 rounded-xl bg-gray-100 p-1">
+              <button
+                onClick={() => setActiveTab('scan')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all duration-200',
+                  activeTab === 'scan'
+                    ? 'bg-white text-primary-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <QrCode className="h-4 w-4" />
+                扫码核验
+              </button>
+              <button
+                onClick={() => setActiveTab('manual')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all duration-200',
+                  activeTab === 'manual'
+                    ? 'bg-white text-primary-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <ScanLine className="h-4 w-4" />
+                手动输入
+              </button>
+            </div>
+
+            {activeTab === 'scan' && (
           <div className="mx-auto mb-8 flex flex-col items-center">
             <div className="relative flex h-[280px] w-[280px] items-center justify-center rounded-xl border-2 border-dashed border-primary-400 bg-white/50">
               <div className="absolute -left-0.5 -top-0.5 h-8 w-8 border-l-4 border-t-4 rounded-tl-xl border-primary-500" />
@@ -200,7 +232,9 @@ export default function CustomerVerify() {
                 查询预约
               </button>
             </div>
-          </div>
+            </div>
+            )}
+          </>
         )}
 
         {customer && (

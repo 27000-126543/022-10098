@@ -848,7 +848,12 @@ export default function ExceptionPage() {
                 return (
                   <div
                     key={item.id}
-                    className="rounded-xl bg-white p-5 shadow-card transition-shadow duration-200 hover:shadow-card-hover"
+                    className={cn(
+                      'rounded-xl bg-white p-5 shadow-card transition-shadow duration-200 hover:shadow-card-hover border-l-4',
+                      item.resolved
+                        ? 'border-l-green-500 opacity-90'
+                        : 'border-l-transparent'
+                    )}
                   >
                     {/* 顶部行 */}
                     <div className="mb-3 flex items-center justify-between gap-3">
@@ -955,17 +960,17 @@ export default function ExceptionPage() {
                         <Timeline nodes={buildTimeline(item)} />
                       </div>
                       <div className="flex flex-col gap-2 flex-shrink-0 justify-start">
-                        {!item.resolved && (
+                        {item.signRecordId && (
                           <button
                             type="button"
                             onClick={() => handleRestartSign(item)}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 transition-all duration-200 hover:bg-primary-100"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-all duration-200 hover:bg-primary-700 active:scale-[0.98]"
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                             重启签署流程
                           </button>
                         )}
-                        {signRecord && (
+                        {!item.resolved && signRecord && (
                           <button
                             type="button"
                             onClick={() => handleViewSignRecord(signRecord.id)}
@@ -985,14 +990,16 @@ export default function ExceptionPage() {
                             标记已解决
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(item.id)}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-all duration-200 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          删除
-                        </button>
+                        {!item.resolved && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(item.id)}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-all duration-200 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            删除
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
