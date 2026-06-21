@@ -64,7 +64,7 @@ const STATUS_OPTIONS = [
 
 const NEXT_ACTION_MAP: Record<SignStatus, { label: string; route: string; dotColor: string }> = {
   pending: { label: '去核验', route: '/', dotColor: 'bg-gray-500' },
-  explaining: { label: '去讲解', route: '/explain', dotColor: 'bg-blue-500' },
+  explaining: { label: '去讲解', route: '/risk-explain', dotColor: 'bg-blue-500' },
   ready_to_sign: { label: '去签署', route: '/sign', dotColor: 'bg-purple-500' },
   completed: { label: '已归档', route: '', dotColor: 'bg-green-500' },
   exception: { label: '去处理异常', route: '/exception', dotColor: 'bg-red-500' },

@@ -20,8 +20,9 @@ import StepIndicator from '@/components/StepIndicator';
 import { useSignFlowStore } from '@/store/signFlow';
 import { projects as rawProjects } from '@/data/projects';
 import { templates } from '@/data/templates';
-import type { ProjectItem, ConsentTemplate } from '@/types';
+import type { ProjectItem, ConsentTemplate, ConsentSection } from '@/types';
 import { cn } from '@/lib/utils';
+import { generateId } from '@/utils/idGenerator';
 
 const categoryIconMap = {
   hyaluronic: Syringe,
@@ -42,6 +43,7 @@ export default function ProjectSelect() {
   const currentCustomer = useSignFlowStore((s) => s.currentCustomer);
   const selectedProjects = useSignFlowStore((s) => s.selectedProjects);
   const toggleProject = useSignFlowStore((s) => s.toggleProject);
+  const setCurrentTemplate = useSignFlowStore((s) => s.setCurrentTemplate);
 
   const allProjects: ProjectItem[] = useMemo(() => {
     return rawProjects.map((p) => {
@@ -60,7 +62,7 @@ export default function ProjectSelect() {
 
   useEffect(() => {
     if (!currentCustomer) {
-      navigate('/');
+      navigate('/', { replace: true });
     }
   }, [currentCustomer, navigate]);
 
@@ -100,6 +102,69 @@ export default function ProjectSelect() {
   const selectedCount = selectedProjects.length;
   const templateCount = matchedTemplates.length;
   const canProceed = selectedCount > 0;
+
+  const buildMergedTemplate = (): ConsentTemplate | null => {
+    if (matchedTemplates.length === 0) return null;
+    if (matchedTemplates.length === 1) return matchedTemplates[0];
+
+    // 合并多个模板：将每个模板的 4 段内容合并，标题带上模板名称前缀
+    const TITLE_ORDER = ['适应症', '禁忌症', '恢复期', '并发症'] as const;
+    const mergedSections: ConsentSection[] = [];
+
+    for (const title of TITLE_ORDER) {
+      const sectionsForTitle: ConsentSection[] = [];
+      for (const tpl of matchedTemplates) {
+        const found = tpl.sections.find((s) => s.title === title);
+        if (found) sectionsForTitle.push(found);
+      }
+      if (sectionsForTitle.length === 0) continue;
+
+      const isKeyRisk = sectionsForTitle.some((s) => s.isKeyRisk);
+      const mergedKeyTerms = sectionsForTitle.flatMap((s) => s.keyTerms ?? []);
+      const dedupKeyTerms = Array.from(
+        new Map(mergedKeyTerms.map((kt) => [kt.termId, kt])).values()
+      );
+      const mergedContent = sectionsForTitle
+        .map((s) => {
+          const ownerTpl = matchedTemplates.find((t) =>
+            t.sections.some((sec) => sec.id === s.id)
+          );
+          const prefix =
+            sectionsForTitle.length > 1 && ownerTpl
+              ? `【${ownerTpl.name.replace('知情同意书', '').replace('同意书', '')}】\n`
+              : '';
+          return `${prefix}${s.content}`;
+        })
+        .join('\n\n');
+
+      mergedSections.push({
+        id: generateId(`sec_${title}`),
+        title,
+        content: mergedContent,
+        keyTerms: dedupKeyTerms,
+        isKeyRisk,
+      });
+    }
+
+    const mergedName =
+      matchedTemplates.length === 1
+        ? matchedTemplates[0].name
+        : `综合知情同意书（${matchedTemplates.length}类合并）`;
+
+    return {
+      id: generateId('tpl_merged'),
+      name: mergedName,
+      applicableProjects: selectedProjects.map((p) => p.id),
+      sections: mergedSections,
+    };
+  };
+
+  const handleProceed = () => {
+    if (!canProceed) return;
+    const merged = buildMergedTemplate();
+    setCurrentTemplate(merged);
+    navigate('/risk-explain');
+  };
 
   if (!currentCustomer) {
     return null;
@@ -344,7 +409,7 @@ export default function ProjectSelect() {
             <button
               type="button"
               disabled={!canProceed}
-              onClick={() => canProceed && navigate('/risk-explain')}
+              onClick={handleProceed}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2',
                 canProceed

@@ -7,6 +7,28 @@ import type {
   SignRecord,
 } from '@/types';
 
+const STORAGE_KEY = 'medical_sign_flow_records_v1';
+
+function loadPersistedRecords(): SignRecord[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as SignRecord[];
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function persistRecords(records: SignRecord[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  } catch {
+    /* noop */
+  }
+}
+
 interface SignFlowState {
   currentCustomer: Customer | null;
   selectedProjects: ProjectItem[];
@@ -28,7 +50,10 @@ interface SignFlowActions {
   setCurrentTemplate: (template: ConsentTemplate | null) => void;
   toggleExplainedSection: (sectionId: string) => void;
   toggleKeyRisk: (sectionId: string) => void;
-  setPreCheck: (key: 'photo' | 'allergy' | 'medication', value: boolean) => void;
+  setPreCheck: (
+    key: 'photo' | 'allergy' | 'medication',
+    value: boolean
+  ) => void;
   setSignerType: (type: SignerType) => void;
   setSignerName: (name: string) => void;
   setGuardianRelation: (rel: string) => void;
@@ -39,7 +64,7 @@ interface SignFlowActions {
   resetAll: () => void;
 }
 
-const initialState: SignFlowState = {
+const initialInnerState: Omit<SignFlowState, 'signRecords'> = {
   currentCustomer: null,
   selectedProjects: [],
   currentTemplate: null,
@@ -51,15 +76,14 @@ const initialState: SignFlowState = {
   guardianRelation: '',
   keySentenceDataUrl: null,
   signatureDataUrl: null,
-  signRecords: [],
 };
 
 export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
   (set) => ({
-    ...initialState,
+    ...initialInnerState,
+    signRecords: loadPersistedRecords(),
 
-    setCustomer: (customer) =>
-      set({ currentCustomer: customer }),
+    setCustomer: (customer) => set({ currentCustomer: customer }),
 
     toggleProject: (projectId, allProjects) =>
       set((state) => {
@@ -81,8 +105,7 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
         }
       }),
 
-    setCurrentTemplate: (template) =>
-      set({ currentTemplate: template }),
+    setCurrentTemplate: (template) => set({ currentTemplate: template }),
 
     toggleExplainedSection: (sectionId) =>
       set((state) => {
@@ -121,33 +144,40 @@ export const useSignFlowStore = create<SignFlowState & SignFlowActions>(
         preCheckStatus: { ...state.preCheckStatus, [key]: value },
       })),
 
-    setSignerType: (type) =>
-      set({ signerType: type }),
+    setSignerType: (type) => set({ signerType: type }),
 
-    setSignerName: (name) =>
-      set({ signerName: name }),
+    setSignerName: (name) => set({ signerName: name }),
 
-    setGuardianRelation: (rel) =>
-      set({ guardianRelation: rel }),
+    setGuardianRelation: (rel) => set({ guardianRelation: rel }),
 
-    setKeySentenceSignature: (url) =>
-      set({ keySentenceDataUrl: url }),
+    setKeySentenceSignature: (url) => set({ keySentenceDataUrl: url }),
 
-    setCustomerSignature: (url) =>
-      set({ signatureDataUrl: url }),
+    setCustomerSignature: (url) => set({ signatureDataUrl: url }),
 
     addSignRecord: (record) =>
-      set((state) => ({
-        signRecords: [...state.signRecords, record],
-      })),
+      set((state) => {
+        const next = [...state.signRecords, record];
+        persistRecords(next);
+        return { signRecords: next };
+      }),
 
     updateSignRecord: (id, patch) =>
-      set((state) => ({
-        signRecords: state.signRecords.map((record) =>
+      set((state) => {
+        const next = state.signRecords.map((record) =>
           record.id === id ? { ...record, ...patch } : record
-        ),
-      })),
+        );
+        persistRecords(next);
+        return { signRecords: next };
+      }),
 
-    resetAll: () => set(initialState),
+    resetAll: () =>
+      set((state) => {
+        // 重置时不清除已签署的持久化记录，只清空流程状态
+        persistRecords(state.signRecords);
+        return {
+          ...initialInnerState,
+          signRecords: state.signRecords,
+        };
+      }),
   })
 );

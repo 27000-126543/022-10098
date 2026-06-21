@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -68,6 +68,17 @@ export default function ESign() {
   const [receiptRecord, setReceiptRecord] = useState<SignRecord | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
 
+  // 路由守卫：没有顾客或项目则返回对应步骤
+  useEffect(() => {
+    if (!currentCustomer) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (selectedProjects.length === 0) {
+      navigate('/projects', { replace: true });
+    }
+  }, [currentCustomer, selectedProjects, navigate]);
+
   const pendingCount = Object.values(preCheckStatus).filter((v) => !v).length;
 
   const getEffectiveSignerName = () => {
@@ -79,6 +90,12 @@ export default function ESign() {
 
   const validateForm = (): string[] => {
     const errors: string[] = [];
+    if (!currentCustomer) {
+      errors.push('未选择顾客，请返回核验页面');
+    }
+    if (selectedProjects.length === 0) {
+      errors.push('未选择项目，请返回项目选择页面');
+    }
     const effectiveName = getEffectiveSignerName();
     if (!effectiveName || effectiveName.trim().length === 0) {
       errors.push('请填写签署人姓名');
@@ -157,6 +174,11 @@ export default function ESign() {
       d.getHours()
     )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
+
+  // 前置条件未满足时返回空（跳转中）
+  if (!currentCustomer || selectedProjects.length === 0) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

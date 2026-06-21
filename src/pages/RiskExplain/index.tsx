@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   AlertTriangle,
   Info,
+  FileText,
 } from 'lucide-react';
 import { useSignFlowStore } from '@/store/signFlow';
 import PageTransition from '@/components/PageTransition';
@@ -29,12 +30,32 @@ export default function RiskExplain() {
     toggleKeyRisk,
   } = useSignFlowStore();
 
+  // 路由守卫：没有顾客/项目/同意书内容，跳回对应页面
+  useEffect(() => {
+    if (!currentCustomer) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (selectedProjects.length === 0) {
+      navigate('/projects', { replace: true });
+      return;
+    }
+    if (!currentTemplate || currentTemplate.sections.length === 0) {
+      navigate('/projects', { replace: true });
+    }
+  }, [currentCustomer, selectedProjects, currentTemplate, navigate]);
+
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(
     currentTemplate?.sections?.[0]?.id ?? null
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTermIds, setDrawerTermIds] = useState<string[]>([]);
   const [drawerActiveId, setDrawerActiveId] = useState('');
+
+  // 前置条件未满足时返回空（跳转中）
+  if (!currentCustomer || selectedProjects.length === 0 || !currentTemplate) {
+    return null;
+  }
 
   const sections = currentTemplate?.sections ?? [];
   const keyRiskSections = sections.filter((s) => s.isKeyRisk);
